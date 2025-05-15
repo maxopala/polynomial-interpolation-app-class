@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Interpolação Polinomial</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Adiciona jQuery -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        #canvas-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 70vh;
+            background: #f8f9fa;
+            overflow-x: auto; /* Permite scroll horizontal */
+            width: 1300px !important;
+        }
+        canvas {
+            width: 800px !important;      /* largura fixa */
+            height: auto;
+            border: 1px solid #dee2e6;
+            background: #fff;
+            display: block;
+            /* Removido max-width: 100% */
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid py-3">
+        <!-- Título e descrição -->
+        <div class="mb-3">
+            <h1 class="display-5">Interpolação Polinomial</h1>
+            <p class="lead">Carregue uma imagem para visualizá-la e realizar operações de interpolação polinomial.</p>
+        </div>
+        <!-- Barra de botões -->
+        <div class="mb-3">
+            <div class="btn-toolbar" role="toolbar">
+                <div class="btn-group me-2" role="group">
+                    <label class="btn btn-primary mb-0">
+                        Carregar Imagem <input type="file" id="imageLoader" accept="image/*" hidden>
+                    </label>
+                </div>
+                <!--
+                    +----------------------------+
+                    | By Max Gontijo de Oliveira |
+                    | Botões poderiam ter sido   |
+                    | criados pelo Copilot.      |
+                    +----------------------------+
+                -->
+                <div class="btn-group me-2" role="group">
+                    <button type="button" class="btn btn-success" id="add-point">Adicionar Pontos</button>
+                </div>
+                <div class="btn-group me-2" role="group">
+                    <button type="button" class="btn btn-danger" id="clear-points">Limpar Pontos</button>
+                </div>
+                <div class="btn-group me-2" role="group">
+                    <button type="button" class="btn btn-primary" id="export-points">Exportar Pontos</button>
+                </div>
+                <div class="btn-group me-2" role="group">
+                    <button type="button" class="btn btn-success" id="interpolate-newton">Interpolar Polinômio de Newton</button>
+                </div>
+                <div class="btn-group me-2" role="group">
+                    <button type="button" class="btn btn-primary" id="export-image">Exportar Imagem</button>
+                </div>
+            </div>
+        </div>
+        <!-- Área do canvas -->
+        <div id="canvas-container">
+            <canvas id="imageCanvas"></canvas>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script type="text/javascript">
+        $(document).ready(function () {
+            const $imageLoader = $('#imageLoader');
+            const $canvas = $('#imageCanvas');
+            const $addPointBtn = $('#add-point');
+            const $clearPointsBtn = $('#clear-points');
+            const $exportPointsBtn = $('#export-points');
+            const $interpolateNewtonBtn = $('#interpolate-newton');
+            const canvas = $canvas[0];
+            const ctx = canvas.getContext('2d');
+
+            // Defina a largura fixa do canvas em pixels
+            const FIXED_CANVAS_WIDTH = 800;
+            canvas.width = FIXED_CANVAS_WIDTH;
+
+            // Array global para armazenar os pontos
+            window.pontos = [];
+
+            // Variável para armazenar a imagem carregada
+            let loadedImage = null;
+
+            // Estado do botão toggle
+            let addPointActive = false;
+
+            // Função para atualizar a aparência do botão
+            function updateAddPointBtn() {
+                if (addPointActive) {
+                    $addPointBtn.removeClass('btn-outline-success').addClass('btn-success');
+                    $addPointBtn.css('opacity', 1);
+                } else {
+                    $addPointBtn.removeClass('btn-success').addClass('btn-outline-success');
+                    $addPointBtn.css('opacity', 0.5);
+                }
+            }
+
+            // Inicializa o botão como inativo
+            updateAddPointBtn();
+
+            // Toggle do botão
+            $addPointBtn.on('click', function () {
+                if (!loadedImage) {
+                    Swal.fire('Erro', 'Carregue uma imagem antes de adicionar pontos.', 'error');
+                    addPointActive = false;
+                    updateAddPointBtn();
+                    return;
+                }
+                addPointActive = !addPointActive;
+                updateAddPointBtn();
+            });
+
+            // Evento de click no canvas para adicionar ponto
+            $canvas.on('click', function (e) {
+                if (!addPointActive || !loadedImage) return;
+
+                // Coordenadas relativas ao canvas
+                const rect = canvas.getBoundingClientRect();
+                const x = Math.round(e.clientX - rect.left);
+                // Inverta o valor de y para que o eixo Y cresça para cima
+                const y = Math.round(canvas.height - (e.clientY - rect.top));
+
+                // Desenha ponto vermelho
+                ctx.beginPath();
+                ctx.arc(x, canvas.height - y, 4, 0, 2 * Math.PI); // desenha no local correto
+                ctx.fillStyle = 'red';
+                ctx.fill();
+
+                // Escreve as coordenadas ao lado do ponto (Y já invertido)
+                ctx.font = "14px Arial";
+                ctx.fillStyle = "black";
+                ctx.textBaseline = "middle";
+                ctx.fillText(`(${x}, ${y})`, x + 8, canvas.height - y);
+
+                // Armazena as coordenadas (com y invertido)
+                window.pontos.push({ x, y });
+            });
+
+            $imageLoader.on('change', function (e) {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = function (event) {
+                    const img = new Image();
+                    img.onload = function () {
+                        // Calcula a altura proporcional à largura fixa
+                        const ratio = img.height / img.width;
+                        const width = FIXED_CANVAS_WIDTH;
+                        const height = width * ratio;
+                        canvas.width = width;
+                        canvas.height = height;
+                        ctx.clearRect(0, 0, width, height);
+                        ctx.drawImage(img, 0, 0, width, height);
+                        loadedImage = img; // Salva a imagem carregada
+                        // Redesenha pontos se houver
+                        window.pontos.forEach(pt => {
+                            ctx.beginPath();
+                            ctx.arc(pt.x, canvas.height - pt.y, 4, 0, 2 * Math.PI);
+                            ctx.fillStyle = 'red';
+                            ctx.fill();
+
+                            ctx.font = "14px Arial";
+                            ctx.fillStyle = "black";
+                            ctx.textBaseline = "middle";
+                            ctx.fillText(`(${pt.x}, ${pt.y})`, pt.x + 8, canvas.height - pt.y);
+                        });
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+
+            // Evento para limpar pontos e recarregar a imagem
+            $clearPointsBtn.on('click', function () {
+                window.pontos = [];
+                if (loadedImage) {
+                    // Redesenha apenas a imagem, sem pontos
+                    const ratio = loadedImage.height / loadedImage.width;
+                    const width = FIXED_CANVAS_WIDTH;
+                    const height = width * ratio;
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.clearRect(0, 0, width, height);
+                    ctx.drawImage(loadedImage, 0, 0, width, height);
+                } else {
+                    // Limpa o canvas se não houver imagem
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+            });
+
+            // Exportar pontos com SweetAlert2
+            $exportPointsBtn.on('click', function () {
+                if (window.pontos.length === 0) {
+                    Swal.fire('Nenhum ponto para exportar!', '', 'warning');
+                    return;
+                }
+
+                Swal.fire({
+                    title: 'Escolha a linguagem para a qual deseja exportar os pontos',
+                    showConfirmButton: false,
+                    html: `
+                        <button id="export-python" class="swal2-confirm swal2-styled" style="margin:5px;">Python</button>
+                        <button id="export-octave" class="swal2-confirm swal2-styled" style="margin:5px;">Octave</button>
+                        <button id="export-java" class="swal2-confirm swal2-styled" style="margin:5px;">Java</button>
+                        <button id="export-c" class="swal2-confirm swal2-styled" style="margin:5px;">C/C++</button>
+                    `
+                });
+
+                $(document).off('click.export').on('click.export', '#export-python', function () {
+                    showExportCode('python');
+                }).on('click.export', '#export-octave', function () {
+                    showExportCode('octave');
+                }).on('click.export', '#export-java', function () {
+                    showExportCode('java');
+                }).on('click.export', '#export-c', function () {
+                    showExportCode('c');
+                });
+            });
+
+            function showExportCode(lang) {
+                let code = '';
+                let title = '';
+                // Ordena os pontos por X em ordem crescente antes de exportar
+                const pts = window.pontos.slice().sort((a, b) => a.x - b.x);
+                if (lang === 'python') {
+                    title = 'Array em Python';
+                    code = 'pontos = [\n' +
+                        pts.map(pt => `    (${pt.x}, ${pt.y})`).join(',\n') +
+                        '\n]';
+                } else if (lang === 'octave') {
+                    title = 'Array em Octave';
+                    code = 'pontos = [\n' +
+                        pts.map(pt => `  ${pt.x}, ${pt.y};`).join('\n') +
+                        '\n];';
+                } else if (lang === 'java') {
+                    title = 'Array em Java';
+                    code = 'int[][] pontos = {\n' +
+                        pts.map(pt => `    {${pt.x}, ${pt.y}}`).join(',\n') +
+                        '\n};';
+                } else if (lang === 'c') {
+                    title = 'Array em C/C++';
+                    code = 'int pontos[][2] = {\n' +
+                        pts.map(pt => `    {${pt.x}, ${pt.y}}`).join(',\n') +
+                        '\n};';
+                }
+
+                Swal.fire({
+                    title: title,
+                    html: `<pre style="text-align:left;"><code id="export-code">${code}</code></pre>`,
+                    showCancelButton: true,
+                    confirmButtonText: 'Copiar',
+                    cancelButtonText: 'Fechar',
+                    didOpen: () => {
+                        const codeElem = document.getElementById('export-code');
+                        if (codeElem) {
+                            // Seleciona o texto para facilitar a cópia
+                            const range = document.createRange();
+                            range.selectNodeContents(codeElem);
+                            const sel = window.getSelection();
+                            sel.removeAllRanges();
+                            sel.addRange(range);
+                        }
+                    }
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        // Copia para a área de transferência
+                        const codeElem = document.getElementById('export-code');
+                        if (codeElem) {
+                            const text = codeElem.innerText;
+                            navigator.clipboard.writeText(text);
+                            Swal.fire('Copiado!', '', 'success');
+                        }
+                    }
+                    // Remove os event listeners para evitar múltiplos binds
+                    $(document).off('click.export');
+                });
+            }
+
+            $interpolateNewtonBtn.on('click', function () {
+                Swal.fire({
+                    title: 'Interpolação Polinomial de Newton',
+                    html: `
+                        <div style="text-align:left">
+                            <label for="swal-x" style="display:block;margin-bottom:2px;">Valores de X:</label>
+                            <input id="swal-x" class="swal2-input" placeholder="Ex: 1.0, 2.5, 3.7">
+                            <label for="swal-coef" style="display:block;margin-bottom:2px;">Coeficientes do polinômio de Newton:</label>
+                            <input id="swal-coef" class="swal2-input" placeholder="Ex: 1.2, -0.5, 3.0">
+                        </div>
+                    `,
+                    showCancelButton: true,
+                    confirmButtonText: 'Interpolar',
+                    cancelButtonText: 'Cancelar',
+                    preConfirm: () => {
+                        const xVals = $('#swal-x').val();
+                        const coefs = $('#swal-coef').val();
+                        return { xVals, coefs };
+                    }
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        const { xVals, coefs } = result.value;
+                        interpolateNewton(xVals, coefs);
+                    }
+                });
+            });
+
+            // Função para interpolar usando o polinômio de Newton
+            function interpolateNewton(xValsStr, coefsStr) {
+                // Converte as strings em arrays de números
+                const xVals = xValsStr.split(',').map(s => parseFloat(s.trim())).filter(v => !isNaN(v));
+                const coefs = coefsStr.split(',').map(s => parseFloat(s.trim())).filter(v => !isNaN(v));
+
+                if (xVals.length === 0 || coefs.length === 0) {
+                    Swal.fire('Erro', 'Preencha corretamente os valores de X e os coeficientes.', 'error');
+                    return;
+                }
+
+                // Determina o intervalo de X para interpolação
+                const minX = Math.min(...xVals);
+                const maxX = Math.max(...xVals);
+
+                // Gera pontos interpolados
+                const numPoints = maxX - minX;
+                const step = (maxX - minX) / (numPoints - 1);
+                const interpPoints = [];
+
+                // +----------------------------+
+                // | By Max Gontijo de Oliveira |
+                // | Todo o laço                |
+                // +----------------------------+
+                for (let i = 0; i < numPoints; i++) {
+                    const x = minX + i * step;
+                    let y = 0;
+                    let value = 1;
+                    for (let j = 0; j < coefs.length; j++) {
+                        y += coefs[j] * value;
+                        value *= (x - xVals[j]);
+                    }
+                    interpPoints.push({ x, y });
+                }
+
+                // Redesenha a imagem e pontos
+                if (typeof loadedImage === 'object' && loadedImage !== null) {
+                    const ratio = loadedImage.height / loadedImage.width;
+                    const width = FIXED_CANVAS_WIDTH;
+                    const height = width * ratio;
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.clearRect(0, 0, width, height);
+                    ctx.drawImage(loadedImage, 0, 0, width, height);
+                } else {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+
+                // Redesenha pontos coletados
+                window.pontos.forEach(pt => {
+                    ctx.beginPath();
+                    ctx.arc(pt.x, canvas.height - pt.y, 4, 0, 2 * Math.PI);
+                    ctx.fillStyle = 'red';
+                    ctx.fill();
+
+                    ctx.font = "14px Arial";
+                    ctx.fillStyle = "black";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(`(${pt.x}, ${pt.y})`, pt.x + 8, canvas.height - pt.y);
+                });
+
+                // Para mapear corretamente, precisamos do intervalo de Y invertido dos pontos coletados
+                const yColetados = window.pontos.map(pt => pt.y);
+                const minY = Math.min(...yColetados);
+                const maxY = Math.max(...yColetados);
+
+                // Desenha a curva interpolada (em azul)
+                ctx.save();
+                ctx.strokeStyle = 'blue';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                interpPoints.forEach((pt, idx) => {
+                    // +----------------------------+
+                    // | By Max Gontijo de Oliveira |
+                    // | As duas atribuições para   |
+                    // | canvasX e canvasY.          |
+                    // +----------------------------+
+                    const canvasX = pt.x;
+                    const canvasY = canvas.height - pt.y;
+                    if (idx === 0) {
+                        ctx.moveTo(canvasX, canvasY);
+                    } else {
+                        ctx.lineTo(canvasX, canvasY);
+                    }
+                });
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            const $exportImageBtn = $('#export-image');
+
+            $exportImageBtn.on('click', function () {
+                if (!loadedImage) {
+                    Swal.fire('Erro', 'Carregue uma imagem antes de exportar.', 'error');
+                    return;
+                }
+                // Converte o canvas para um dataURL JPG
+                const dataURL = canvas.toDataURL('image/jpeg', 0.92);
+
+                // Cria um link temporário para download
+                const link = document.createElement('a');
+                link.href = dataURL;
+                link.download = 'canvas.jpg';
+
+                // Mostra uma modal com botão para baixar
+                Swal.fire({
+                    title: 'Exportar Imagem',
+                    html: `<img src="${dataURL}" alt="Preview" style="max-width:100%;border:1px solid #ccc;margin-bottom:10px;"><br>
+                           <a id="download-jpg" class="swal2-confirm swal2-styled" href="${dataURL}" download="canvas.jpg">Baixar JPG</a>`,
+                    showConfirmButton: false,
+                    showCancelButton: true,
+                    cancelButtonText: 'Fechar'
+                });
+            });
+        });
+    </script>
+</body>
+</html>
