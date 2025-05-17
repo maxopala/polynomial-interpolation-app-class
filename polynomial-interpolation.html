@@ -294,12 +294,18 @@
             }
 
             $interpolateNewtonBtn.on('click', function () {
+                // Se houver pontos, inicializa o campo de X com os valores dos pontos ordenados por X
+                let xInit = "";
+                if (window.pontos.length > 0) {
+                    const pts = window.pontos.slice().sort((a, b) => a.x - b.x);
+                    xInit = pts.map(pt => pt.x).join(', ');
+                }
                 Swal.fire({
                     title: 'Interpolação Polinomial de Newton',
                     html: `
                         <div style="text-align:left">
                             <label for="swal-x" style="display:block;margin-bottom:2px;">Valores de X:</label>
-                            <input id="swal-x" class="swal2-input" placeholder="Ex: 1.0, 2.5, 3.7">
+                            <input id="swal-x" class="swal2-input" placeholder="Ex: 1.0, 2.5, 3.7" value="${xInit}">
                             <label for="swal-coef" style="display:block;margin-bottom:2px;">Coeficientes do polinômio de Newton:</label>
                             <input id="swal-coef" class="swal2-input" placeholder="Ex: 1.2, -0.5, 3.0">
                         </div>
